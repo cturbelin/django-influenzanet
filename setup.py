@@ -9,8 +9,8 @@ setup(
     description="Add-on tools for django influenzanet website",
     long_description="\n".join(
         [
-            open("README.rst", encoding="utf-8").read(),
-        #    open("CHANGES.rst", encoding="utf-8").read(),
+            open("README.rst").read(),
+        #    open("CHANGES.rst").read(),
         ]
     ),
     keywords="influenzanet",
