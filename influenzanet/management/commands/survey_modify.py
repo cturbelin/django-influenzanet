@@ -21,7 +21,7 @@ TYPE_MATRIX_SELECT = 'matrix-select'
 
 DATATYPE_NUMERIC = 'Numeric'
 DATATYPE_TEXT = 'Text'
-ACTIONS = ['add_question']
+ACTIONS = ['add_question', 'add_option']
 
 DATA_TYPES = [DATATYPE_NUMERIC, DATATYPE_TEXT]
 
@@ -38,6 +38,7 @@ class Command(BaseCommand):
                     dest='file',
                     help='json file with actions to make on survey'),
         make_option('-c', '--commit', action='store_true',  dest='commit', help='Validate changes (dont by default'),
+        make_option('-l', '--locale', action='store', type="string", dest='locale', help='Validate changes (dont by default', default='en'),
     )
 
     def get_question(self, name):
@@ -61,6 +62,7 @@ class Command(BaseCommand):
 
         commit = options.get('commit')
         json_file = options.get('file')
+        self.locale = options.get('locale')
 
         if json_file is None:
             raise Exception("File not provided")
@@ -281,6 +283,9 @@ class Command(BaseCommand):
         if 'options' in p:
             self.add_question_options(q, p['options'])
 
+        if 'options_from' in p:
+            self.add_question_options_from(q, p['options_from'])
+
         if 'rows' in p:
             rows = p['rows']
             if not isinstance(rows, list) or not len(rows) > 0:
@@ -341,9 +346,28 @@ class Command(BaseCommand):
                 print("   + " + self.str_rule(rule))
                 rid = rid + 1
     
+    def add_question_options_from(self, question, options_from):
+        
+        blank_value = options_from.get('blank_value', None)
+        
+        options = []
+        if not blank_value is None:
+            options.append({'value': blank_value, 'title': "--" })
+        
+        loaded = False
+        if 'dataset' in options_from:
+            dataset_name = options_from['dataset']
+            if dataset_name == 'countries':
+                data = datasets.get_data_file('countries/' + self.locale)
+                for k,v in data['countries'].items():
+                    options.append({'value': k, 'title': v})
+        
+        self.add_question_options(question, options)
+            
+            
+    
     def add_question_options(self, question, xoptions):
         option_ordinal = 0
-        
         for xoption in xoptions:
             option_ordinal += 1
             option = models.Option()
@@ -366,7 +390,6 @@ class Command(BaseCommand):
             
             option.save()
             print "  + " + self.str_option(option)
-            #options[option.value] = option
 
     def add_question_rows(self, question, rows):
         rid = 1 # row def index, for errors
