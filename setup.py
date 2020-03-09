@@ -32,7 +32,7 @@ setup(
     package_dir={"influenzanet": "influenzanet"},
     use_scm_version=True,
     setup_requires=["setuptools_scm"],
-    python_requires="=>2.7",
+    python_requires="~2.7",
     install_requires=[],
     include_package_data=True,
     packages=find_packages(),
