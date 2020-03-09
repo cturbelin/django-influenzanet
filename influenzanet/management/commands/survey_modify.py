@@ -170,6 +170,10 @@ class Command(BaseCommand):
             print(self.str_option(o))
     
     def redorder_options(self, options, after):
+        """
+        Reorder options to insert a new option.
+        Return the ordinal value to assign to the new option
+        """
         ordinal = None
         for o in options:
             if o.value == after:
@@ -177,6 +181,22 @@ class Command(BaseCommand):
         if ordinal is None:
             raise Exception("Unknown after value '%s'" % (after) )
         for o in options:
+            if o.ordinal > ordinal:
+                o.ordinal = ordinal + 2
+                o.save()
+        return ordinal + 1
+
+    def redorder_questions(self, after):
+        """
+            Reorder questions to insert a new question. Return the ordinal value to assign to the new question
+        """
+        ordinal = None
+        for o in self.survey.questions:
+            if o.data_name == after:
+                ordinal = o.ordinal
+        if ordinal is None:
+            raise Exception("Unknown after question '%s'" % (after) )
+        for o in self.survey.questions:
             if o.ordinal > ordinal:
                 o.ordinal = ordinal + 2
                 o.save()
@@ -191,10 +211,17 @@ class Command(BaseCommand):
         if name is None:
             raise Exception("Name expected")
         
-        ordinal = models.Question.objects.filter(survey=self.survey).aggregate(ordinal=Max('ordinal'))
-        ordinal = ordinal['ordinal'] + 1
+        max_ordinal = models.Question.objects.filter(survey=self.survey).aggregate(ordinal=Max('ordinal'))
+        max_ordinal = max_ordinal['ordinal'] + 1
         
         q.data_name = name
+        
+        if 'after' in p:
+            ordinal = self.redorder_questions(p['after'])
+            print "Using after '%s' : %d" % (p['after'], ordinal)
+        else:
+            ordinal = max_ordinal
+        
         q.ordinal = ordinal
         q.title = p['title']
         if 'description' in p:
