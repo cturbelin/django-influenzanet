@@ -10,13 +10,15 @@ from optparse import make_option
 from django.core.management.base import BaseCommand
 from apps.pollster import models
 from django.utils import simplejson
-from django.db import transaction
+from django.db import transaction, connection
 from django.db.models import Max
-
+from influenzanet import datasets
 
 TYPES = dict(models.QUESTION_TYPE_CHOICES)
 TYPE_SINGLE = 'single-choice'
 TYPE_MULTIPLE = 'multiple-choice'
+TYPE_MATRIX_SELECT = 'matrix-select'
+
 DATATYPE_NUMERIC = 'Numeric'
 DATATYPE_TEXT = 'Text'
 ACTIONS = ['add_question']
@@ -69,10 +71,10 @@ class Command(BaseCommand):
             raise '"survey" entry not defined in json file'
         
         self.survey = models.Survey.objects.get(shortname=update_def['survey']) 
-        
-        self.fields = {}
-        
         print "Found Survey %d "  % (self.survey.id)
+        
+        # Get the db fields list before modification
+        self.fields_before = self.get_survey_fields()
        
         if not 'actions' in update_def:
             raise '"Action" entry not defined in json file'
@@ -92,7 +94,10 @@ class Command(BaseCommand):
                     idx = idx + 1
             except Exception as e:
                 transaction.rollback()
-                raise    
+                raise 
+            
+            self.fields_after = self.get_survey_fields()   
+            
             if commit:
                 transaction.commit()
                 commited = True
@@ -103,32 +108,58 @@ class Command(BaseCommand):
             print "Changed has been made on survey " + self.survey.shortname
         
         self.build_fields()
-        
-    def add_field(self, name, type):
+    
+    def get_survey_fields(self):
         """
-            Register field to modify data table
+         Get the columns list defined for this survey
         """
-        if name in self.fields:
-            raise Exception("Field '%s' already exists" % (name)) 
-         
-        self.fields[name] = {'type': type}
-       
+        fields = []
+        for question in self.survey.questions:
+            fields += question.as_fields()
+        return fields
+    
+               
     def build_fields(self):
         """
             Create SQL modification for data tables from fields
         """
-        ff = []
-        for name, r in self.fields.items():
-            field_type = r['type']
-            sql_type = '<Unknown>'
-            if field_type == "bool":
-                sql_type = "boolean NOT NULL"
-            if field_type == DATATYPE_NUMERIC:
-                sql_type = "integer"
-            if field_type == DATATYPE_TEXT:
-                sql_type = "text"
-            ff.append('ADD COLUMN "' + name+'" '+ sql_type)        
-        s = "ALTER TABLE pollster_results_weekly\n" + ",\n".join(ff)
+        after = dict(self.fields_after)
+        before = dict(self.fields_before)   
+        to_add = []
+        
+        for name in after.keys():
+            if not name in before:
+                to_add.append( (name, after[name]) )
+        
+        qn = connection.ops.quote_name
+        
+        sql_data_types = connection.creation.data_types
+            
+        sql = []
+        for f in to_add:
+            (name, field) = f
+            
+            sql_type = sql_data_types[field.get_internal_type()]
+            
+            if not field.null:
+                sql_type += ' NOT NULL'
+            column = field.db_column or name
+            
+            sql_type = sql_type % {'column': column }
+            
+            sql_name = qn(column)
+           
+            print "Adding %s : %s %s" % (name, sql_name, sql_type)
+            
+            s = "ADD COLUMN %s %s" % (sql_name, sql_type)
+            
+            sql.append(s)
+        
+        table = self.survey.shortname
+        
+        table = qn('pollster_results_' + table)
+        
+        s = "ALTER TABLE  "+ table +"\n" + ",\n".join(sql)
         f = open(self.survey.shortname +'.sql', 'w')
         f.write(s)
         f.close()
@@ -163,10 +194,7 @@ class Command(BaseCommand):
                 max_ordinal = max_ordinal + 1
             o.ordinal = ordinal
             o.save()
-            
-            if question.is_multiple_choice:
-                self.add_field(o.data_name, type="bool")
-            
+                        
             print(self.str_option(o))
     
     def redorder_options(self, options, after):
@@ -235,10 +263,10 @@ class Command(BaseCommand):
         else:
             q.starts_hidden = False
         q.regex = ''
-        type = p['type']
-        if not type in TYPES:
-            raise Exception("Unknown type '%s'" % type)
-        q.type = type
+        question_type = p['type']
+        if not question_type in TYPES:
+            raise Exception("Unknown type '%s'" % question_type)
+        q.type = question_type
         data_type = p['data_type']
         dt = self.get_datatype(data_type)
         q.data_type = dt
@@ -248,44 +276,25 @@ class Command(BaseCommand):
         
         q.save()
         
-        if q.is_single_choice:
-            self.add_field(q.data_name, data_type)
-        
         print(" Adding " + self.str_question(q))
-        options = {}
-        if type == TYPE_SINGLE or type == TYPE_MULTIPLE:
-            xoptions = p['options']
-            option_ordinal = 0
-            
-            for xoption in xoptions:
-                option_ordinal += 1
-                option = models.Option()
-                option.ordinal = option_ordinal
-                option.question = q
-                option.is_virtual = False
-                virtual_type = ''
-                option.virtual_inf =  ''
-                option.virtual_sup = ''
-                option.virtual_regex = ''
-                option.text = xoption['title'] 
-                option.value = xoption['value']
-                option.is_open = False
-                option.starts_hidden = False
-                
-                if 'open' in xoption:
-                    option.is_open = True
-                    if q.open_option_data_type is None:
-                        raise Exception("Please set open option data type for this question")
-                
-                option.save()
-                print "  + " + self.str_option(option)
-                options[option.value] = option
-                
-                if q.is_multiple_choice:
-                    self.add_field(option.data_name, 'bool')
-                if option.is_open:
-                    self.add_field(option.open_option_data_name, option.open_option_data_type)    
-                
+        
+        if 'options' in p:
+            self.add_question_options(q, p['options'])
+
+        if 'rows' in p:
+            rows = p['rows']
+            if not isinstance(rows, list) or not len(rows) > 0:
+                raise Exception("Rows must be a list") 
+            self.add_question_rows(q, rows)
+           
+        # Add columns       
+        if 'columns' in p:
+            columns = p['columns']
+            if not isinstance(columns, list) or not len(columns) > 0:
+                raise Exception("columns must be a list") 
+            self.add_question_columns(q, columns)
+        
+        
         if 'rules' in p:
             rules = p['rules']
             if not isinstance(rules, list) or not len(rules) > 0:
@@ -331,6 +340,94 @@ class Command(BaseCommand):
                 
                 print("   + " + self.str_rule(rule))
                 rid = rid + 1
+    
+    def add_question_options(self, question, xoptions):
+        option_ordinal = 0
+        
+        for xoption in xoptions:
+            option_ordinal += 1
+            option = models.Option()
+            option.ordinal = option_ordinal
+            option.question = question
+            option.is_virtual = False # Virtual options are not handled yet
+            virtual_type = ''
+            option.virtual_inf =  ''
+            option.virtual_sup = ''
+            option.virtual_regex = ''
+            option.text = xoption['title'] 
+            option.value = xoption['value']
+            option.is_open = False
+            option.starts_hidden = False
+            
+            if 'open' in xoption:
+                option.is_open = True
+                if question.open_option_data_type is None:
+                    raise Exception("Please set open option data type for this question")
+            
+            option.save()
+            print "  + " + self.str_option(option)
+            #options[option.value] = option
+
+    def add_question_rows(self, question, rows):
+        rid = 1 # row def index, for errors
+        ordinals = [] # ordinals (must be unique)
+        for xr in rows:
+            
+            # Ordinal are used to build the data name for response of a matrix question
+            # So it's mandatory
+            if not 'ordinal' in xr:
+                raise Exception("'ordinal' is required for row definition in row %d" % (rid, ))
+            
+            o = int(xr['ordinal'])
+            if not o > 0:
+                raise Exception("Ordinal must be positive integer")
+            
+            if o in ordinals:
+                raise Exception("Ordinal for row must be unique, %d already defined in row %d" % (o, rid))
+            
+            if not 'title' in xr:
+                raise Exception("'title' is required row %d" % (rid, ))
+            
+            ordinals.append(o)
+            
+            row = models.QuestionRow()
+            row.question = question
+            row.ordinal = o
+            row.title = xr['title']
+            row.save()
+            
+            rid = rid + 1
+
+
+    def add_question_columns(self, question, columns):
+        rid = 1 # row def index, for errors
+        ordinals = []
+        for xr in columns:
+            
+            # Ordinal are used to build the data name for response of a matrix question
+            # So it's mandatory
+            if not 'ordinal' in xr:
+                raise Exception("'ordinal' is required for column definition in column %d" % (rid, ))
+            
+            o = int(xr['ordinal'])
+            if not o > 0:
+                raise Exception("Ordinal must be positive integer in column %d " % (rid, ))
+            
+            if o in ordinals:
+                raise Exception("Ordinal for columns must be unique, %d already defined in column %d" % (o, rid))
+            
+            if not 'title' in xr:
+                raise Exception("'title' is required columns %d" % (rid, ))
+            
+            ordinals.append(o)
+            
+            column = models.QuestionColumn()
+            column.question = question
+            column.ordinal = o
+            column.title = xr['title']
+            column.save()
+            rid = rid + 1
+    
                 
     def get_target_options(self, question, oo):           
         subject_options = None
