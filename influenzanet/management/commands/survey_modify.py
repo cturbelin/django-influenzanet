@@ -37,6 +37,7 @@ class Command(BaseCommand):
         make_option('-f', '--file', action='store', type="string",
                     dest='file',
                     help='json file with actions to make on survey'),
+        make_option('-s', '--survey', action='store',  dest='survey', help='Target survey shortname'),
         make_option('-c', '--commit', action='store_true',  dest='commit', help='Validate changes (dont by default'),
         make_option('-l', '--locale', action='store', type="string", dest='locale', help='Validate changes (dont by default', default='en'),
     )
@@ -58,22 +59,26 @@ class Command(BaseCommand):
     
     def handle(self, *args, **options):
 
-        verbosity = int(options.get('verbosity'))
+        self.verbosity = int(options.get('verbosity'))
 
         commit = options.get('commit')
         json_file = options.get('file')
         self.locale = options.get('locale')
-
+        shortname = options.get('survey')
+        
         if json_file is None:
             raise Exception("File not provided")
 
         update_def = simplejson.load(open(json_file, 'r'))
         
-        if not 'survey' in update_def:
-            raise '"survey" entry not defined in json file'
+        if shortname is None:
+            if 'survey' in update_def:
+                shortname = update_def['survey']
+            else:
+                raise Exception("No survey name defined in update file")
         
-        self.survey = models.Survey.objects.get(shortname=update_def['survey']) 
-        print "Found Survey %d "  % (self.survey.id)
+        self.survey = models.Survey.objects.get(shortname=shortname) 
+        print "Found Survey %s %d "  % (shortname, self.survey.id)
         
         # Get the db fields list before modification
         self.fields_before = self.get_survey_fields()
@@ -88,7 +93,7 @@ class Command(BaseCommand):
             try:
                 idx = 0
                 for action in actions:
-                    print "Action %d" % (idx, )
+                    print "Action %d <%s>" % (idx, action['action'] )
                     if(action['action'] == 'add_question'):
                         self.add_question(action)
                     if(action['action'] == 'add_option'):
@@ -96,7 +101,7 @@ class Command(BaseCommand):
                     idx = idx + 1
             except Exception as e:
                 transaction.rollback()
-                raise 
+                raise
             
             self.fields_after = self.get_survey_fields()   
             
@@ -153,7 +158,8 @@ class Command(BaseCommand):
             
             sql_name = qn(column)
            
-            print "Adding %s : %s %s" % (name, sql_name, sql_type)
+            if self.verbosity > 1:
+                print "Adding %s : %s %s" % (name, sql_name, sql_type)
             
             s = "ADD COLUMN %s %s" % (sql_name, sql_type)
             
@@ -163,7 +169,7 @@ class Command(BaseCommand):
         
         table = qn('pollster_results_' + table)
         
-        s = "ALTER TABLE  "+ table +"\n" + ",\n".join(sql)
+        s = "ALTER TABLE  "+ table +"\n" + ",\n".join(sql) + ";\n"
         
         fn = self.survey.shortname +'.sql'
         f = open(fn, 'w')
@@ -179,7 +185,8 @@ class Command(BaseCommand):
         name = p['question']
         question = self.get_question(name)
         
-        print("Add option in " + self.str_question(question))
+        if self.verbosity > 1:
+            print("Add option in " + self.str_question(question))
         
         max_ordinal = models.Option.objects.filter(question=question).aggregate(ordinal=Max('ordinal'))
         max_ordinal = max_ordinal['ordinal'] + 1
@@ -217,7 +224,7 @@ class Command(BaseCommand):
             raise Exception("Unknown after value '%s'" % (after) )
         for o in options:
             if o.ordinal > ordinal:
-                o.ordinal = ordinal + 2
+                o.ordinal = o.ordinal + 2
                 o.save()
         return ordinal + 1
 
@@ -233,7 +240,8 @@ class Command(BaseCommand):
             raise Exception("Unknown after question '%s'" % (after) )
         for o in self.survey.questions:
             if o.ordinal > ordinal:
-                o.ordinal = ordinal + 2
+                # Shift all values by 2, to keep a order value at ordinal + 1 (for the inserted question)
+                o.ordinal = o.ordinal + 2
                 o.save()
         return ordinal + 1
         
@@ -253,7 +261,8 @@ class Command(BaseCommand):
         
         if 'after' in p:
             ordinal = self.redorder_questions(p['after'])
-            print "Using after '%s' : %d" % (p['after'], ordinal)
+            if self.verbosity > 1:
+                print "Using after '%s' : %d" % (p['after'], ordinal)
         else:
             ordinal = max_ordinal
         
@@ -347,8 +356,8 @@ class Command(BaseCommand):
                 if object_options is not None:
                     rule.object_options = object_options
                 
-                
-                print("   + " + self.str_rule(rule))
+                if self.verbosity > 0:
+                    print("   + " + self.str_rule(rule))
                 rid = rid + 1
     
     def add_question_options_from(self, question, options_from):
