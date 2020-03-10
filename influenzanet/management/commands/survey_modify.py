@@ -143,8 +143,10 @@ class Command(BaseCommand):
             
             sql_type = sql_data_types[field.get_internal_type()]
             
-            if not field.null:
-                sql_type += ' NOT NULL'
+            # Do not apply not null constraint because there are already data in the table
+            # Existing rows will have NULL value for the newly created columns
+            #if not field.null:
+            #    sql_type += ' NOT NULL'
             column = field.db_column or name
             
             sql_type = sql_type % {'column': column }
@@ -162,9 +164,12 @@ class Command(BaseCommand):
         table = qn('pollster_results_' + table)
         
         s = "ALTER TABLE  "+ table +"\n" + ",\n".join(sql)
-        f = open(self.survey.shortname +'.sql', 'w')
+        
+        fn = self.survey.shortname +'.sql'
+        f = open(, 'w')
         f.write(s)
         f.close()
+        print("Modifications to apply to "+ table+" are in "+ fn)
         
         
     def add_option(self, action):
@@ -477,6 +482,7 @@ class Command(BaseCommand):
         if subject_options is None:
             raise Exception("Unable to find option definitions")
         return subject_options
+    
     def str_question(self, q):
         if q is None:
             return "Question<None>"
