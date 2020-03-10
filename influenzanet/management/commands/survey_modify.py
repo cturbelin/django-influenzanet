@@ -166,7 +166,7 @@ class Command(BaseCommand):
         s = "ALTER TABLE  "+ table +"\n" + ",\n".join(sql)
         
         fn = self.survey.shortname +'.sql'
-        f = open(, 'w')
+        f = open(fn, 'w')
         f.write(s)
         f.close()
         print("Modifications to apply to "+ table+" are in "+ fn)
