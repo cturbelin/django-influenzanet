@@ -82,11 +82,16 @@ class Command(BaseCommand):
         
         # Get the db fields list before modification
         self.fields_before = self.get_survey_fields()
-       
+        
         if not 'actions' in update_def:
             raise '"Action" entry not defined in json file'
         
         actions = update_def['actions']
+        
+        # List of added names or duplicates
+        self.questions_names = []
+        for field in self.fields_before:
+            self.questions_names.append(field[0])
         
         commited = False
         with transaction.commit_manually():
@@ -95,9 +100,10 @@ class Command(BaseCommand):
                 for action in actions:
                     print "Action %d <%s>" % (idx, action['action'] )
                     if(action['action'] == 'add_question'):
-                        self.add_question(action)
+                        self.action_add_question(action)
                     if(action['action'] == 'add_option'):
-                        self.add_option(action)
+                        self.action_add_option(action)
+                        
                     idx = idx + 1
             except Exception as e:
                 transaction.rollback()
@@ -178,7 +184,7 @@ class Command(BaseCommand):
         print("Modifications to apply to "+ table+" are in "+ fn)
         
         
-    def add_option(self, action):
+    def action_add_option(self, action):
         p = action['params']
         if p is None:
             raise Exception("Params expected")
@@ -243,21 +249,26 @@ class Command(BaseCommand):
                 # Shift all values by 2, to keep a order value at ordinal + 1 (for the inserted question)
                 o.ordinal = o.ordinal + 2
                 o.save()
-        return ordinal + 1
-        
-    def add_question(self, action):    
+        return ordinal + 1        
+         
+    def action_add_question(self, action):    
         p = action['params']
         if p is None:
             raise Exception("Params expected")
         q = models.Question()
         name = p['name']
+        
         if name is None:
             raise Exception("Name expected")
+        
+        if name in self.questions_names:
+            raise Exception("Name '%s' already in use" % (name))
         
         max_ordinal = models.Question.objects.filter(survey=self.survey).aggregate(ordinal=Max('ordinal'))
         max_ordinal = max_ordinal['ordinal'] + 1
         
         q.data_name = name
+        self.questions_names.append(name)
         
         if 'after' in p:
             ordinal = self.redorder_questions(p['after'])
@@ -365,20 +376,20 @@ class Command(BaseCommand):
         blank_value = options_from.get('blank_value', None)
         
         options = []
-        if not blank_value is None:
-            options.append({'value': blank_value, 'title': "--" })
-        
-        loaded = False
         if 'dataset' in options_from:
             dataset_name = options_from['dataset']
             if dataset_name == 'countries':
                 data = datasets.get_data_file('countries/' + self.locale)
                 for k,v in data['countries'].items():
                     options.append({'value': k, 'title': v})
+        if 'order' in options_from and options_from['order']:
+            options.sort(cmp=None, key=lambda r : r['title'].lower(), reverse=False)
+        
+        if not blank_value is None:
+            blank_title = options_from.get('blank_title', '--')
+            options.insert(0, {'value': blank_value, 'title': blank_title })
         
         self.add_question_options(question, options)
-            
-            
     
     def add_question_options(self, question, xoptions):
         option_ordinal = 0
