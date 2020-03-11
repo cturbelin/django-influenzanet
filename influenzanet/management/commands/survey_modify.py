@@ -13,6 +13,7 @@ from django.utils import simplejson
 from django.db import transaction, connection
 from django.db.models import Max
 from influenzanet import datasets
+import unicodedata
 
 TYPES = dict(models.QUESTION_TYPE_CHOICES)
 TYPE_SINGLE = 'single-choice'
@@ -376,6 +377,17 @@ class Command(BaseCommand):
         blank_value = options_from.get('blank_value', None)
         
         options = []
+        
+        def sorter(text):
+            try:
+                text = unicode(text, 'utf-8')
+            except (TypeError, NameError): # unicode is a default on python 3 
+                pass
+            text = unicodedata.normalize('NFD', text)
+            text = text.encode('ascii', 'ignore')
+            text = text.lower()
+            return text
+        
         if 'dataset' in options_from:
             dataset_name = options_from['dataset']
             if dataset_name == 'countries':
@@ -383,7 +395,7 @@ class Command(BaseCommand):
                 for k,v in data['countries'].items():
                     options.append({'value': k, 'title': v})
         if 'order' in options_from and options_from['order']:
-            options.sort(cmp=None, key=lambda r : r['title'].lower(), reverse=False)
+            options.sort(cmp=None, key=lambda r : sorter(r['title']), reverse=False)
         
         if not blank_value is None:
             blank_title = options_from.get('blank_title', '--')
