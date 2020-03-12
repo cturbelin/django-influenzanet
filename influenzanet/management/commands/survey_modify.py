@@ -14,6 +14,9 @@ from django.db import transaction, connection
 from django.db.models import Max
 from influenzanet import datasets
 import unicodedata
+from xml.etree import ElementTree
+from apps.pollster.models import TranslationOption, TranslationQuestion,\
+    TranslationQuestionRow, TranslationQuestionColumn
 
 TYPES = dict(models.QUESTION_TYPE_CHOICES)
 TYPE_SINGLE = 'single-choice'
@@ -41,6 +44,7 @@ class Command(BaseCommand):
         make_option('-s', '--survey', action='store',  dest='survey', help='Target survey shortname'),
         make_option('-c', '--commit', action='store_true',  dest='commit', help='Validate changes (dont by default'),
         make_option('-l', '--locale', action='store', type="string", dest='locale', help='Validate changes (dont by default', default='en'),
+        make_option('-t', '--translation', action='store_true',  dest='translation', help='Create translation file', default=False),
     )
 
     def get_question(self, name):
@@ -66,6 +70,7 @@ class Command(BaseCommand):
         json_file = options.get('file')
         self.locale = options.get('locale')
         shortname = options.get('survey')
+        translation_file = options.get('translation')
         
         if json_file is None:
             raise Exception("File not provided")
@@ -80,6 +85,11 @@ class Command(BaseCommand):
         
         self.survey = models.Survey.objects.get(shortname=shortname) 
         print "Found Survey %s %d "  % (shortname, self.survey.id)
+        
+        # New translations
+        self.new_translations = []
+        
+        self.translations = list(models.TranslationSurvey.objects.filter(survey=self.survey))
         
         # Get the db fields list before modification
         self.fields_before = self.get_survey_fields()
@@ -122,6 +132,8 @@ class Command(BaseCommand):
             print "Changed has been made on survey " + self.survey.shortname
         
         self.build_fields()
+        if translation_file:
+            self.build_translations()
     
     def get_survey_fields(self):
         """
@@ -183,7 +195,22 @@ class Command(BaseCommand):
         f.write(s)
         f.close()
         print("Modifications to apply to "+ table+" are in "+ fn)
-        
+    
+    def build_translations(self):
+        root = ElementTree.Element('translations')
+        root.set('survey', self.survey.shortname)
+        root.set('language', 'en')
+        for r in self.new_translations:
+            x = ElementTree.SubElement(root, 'translate')
+            for k,v in r.items():
+                e = ElementTree.Element(k)
+                e.text = unicode(v)
+                x.append(e)
+                
+        fn = self.survey.shortname + '.i18n.xml'
+        f = open(fn, 'w')
+        f.write(ElementTree.tostring(root, encoding='utf-8'))
+        f.close()
         
     def action_add_option(self, action):
         p = action['params']
@@ -215,8 +242,52 @@ class Command(BaseCommand):
                 max_ordinal = max_ordinal + 1
             o.ordinal = ordinal
             o.save()
-                        
             print(self.str_option(o))
+    
+            self.translate_option(o, xo['title'])
+    
+    def translate_option(self, option, text, localized=False):
+        for st in self.translations:
+            t = TranslationOption()
+            t.translation = st
+            t.option = option
+            t.text = text
+            t.save()
+            print(self.str_trans_option(t))
+        if not localized:
+            self.new_translations.append({'type': 'option', 'value': option.value, 'text': option.text, 'description': option.description, 'question': option.question.data_name })
+
+    def translate_question(self, question, title, description=None):
+        for st in self.translations:
+            t = TranslationQuestion()
+            t.translation = st
+            t.question = question
+            t.title = title
+            t.description = description
+            t.save()
+            print(self.str_trans_question(t))
+        self.new_translations.append({'type': 'question', 'question': question.data_name, 'title': question.title, 'description': question.description})
+    
+    def translate_question_row(self, row, title):
+        for st in self.translations:
+            t = TranslationQuestionRow()
+            t.translation = st
+            t.row = row
+            t.title = title
+            t.save()
+            print(self.str_trans_question_row(t))
+        self.new_translations.append({'type': 'row', 'question': row.question.data_name, 'ordinal': row.ordinal, 'title': row.title})
+    
+    
+    def translate_question_column(self, column, title):
+        for st in self.translations:
+            t = TranslationQuestionColumn()
+            t.translation = st
+            t.column = column
+            t.title = title
+            t.save()
+            print(self.str_trans_question_column(t))
+        self.new_translations.append({'type': 'column', 'question': column.question.data_name, 'ordinal': column.ordinal, 'title': column.title})
     
     def redorder_options(self, options, after):
         """
@@ -305,6 +376,7 @@ class Command(BaseCommand):
         q.save()
         
         print(" Adding " + self.str_question(q))
+        self.translate_question(q, q.title, q.description)
         
         if 'options' in p:
             self.add_question_options(q, p['options'])
@@ -388,10 +460,12 @@ class Command(BaseCommand):
             text = text.lower()
             return text
         
+        localized = False
         if 'dataset' in options_from:
             dataset_name = options_from['dataset']
             if dataset_name == 'countries':
                 data = datasets.get_data_file('countries/' + self.locale)
+                localized = True
                 for k,v in data['countries'].items():
                     options.append({'value': k, 'title': v})
         if 'order' in options_from and options_from['order']:
@@ -401,9 +475,9 @@ class Command(BaseCommand):
             blank_title = options_from.get('blank_title', '--')
             options.insert(0, {'value': blank_value, 'title': blank_title })
         
-        self.add_question_options(question, options)
+        self.add_question_options(question, options, localized=localized)
     
-    def add_question_options(self, question, xoptions):
+    def add_question_options(self, question, xoptions, localized=False):
         option_ordinal = 0
         for xoption in xoptions:
             option_ordinal += 1
@@ -427,6 +501,7 @@ class Command(BaseCommand):
             
             option.save()
             print "  + " + self.str_option(option)
+            self.translate_option(option, option.text, localized=localized)
 
     def add_question_rows(self, question, rows):
         rid = 1 # row def index, for errors
@@ -455,6 +530,8 @@ class Command(BaseCommand):
             row.ordinal = o
             row.title = xr['title']
             row.save()
+            
+            self.translate_question_row(row, row.title)
             
             rid = rid + 1
 
@@ -486,6 +563,9 @@ class Command(BaseCommand):
             column.ordinal = o
             column.title = xr['title']
             column.save()
+            
+            self.translate_question_column(column, column.title)
+            
             rid = rid + 1
     
                 
@@ -523,6 +603,18 @@ class Command(BaseCommand):
     
     def str_option(self, option):
         return '<Option %s,%s,"%s">' % (option.id, option.value, option.text) 
+    
+    def str_trans_option(self, to):
+        return '<TransOption %s,%s,"%s">' % (to.translation.id, to.option.id, to.text) 
+   
+    def str_trans_question(self, to):
+        return '<TransQuestion %s,%s,"%s">' % (to.translation.id, to.question.id, to.title) 
+    
+    def str_trans_question_row(self, to):
+        return '<TransRow %s,%s,"%s">' % (to.translation.id, to.row.id, to.title) 
+    
+    def str_trans_question_column(self, to):
+        return '<TransColumn %s,%s,"%s">' % (to.translation.id, to.column.id, to.title) 
     
     def str_options(self, options):
         if options is None:
