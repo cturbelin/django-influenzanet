@@ -202,10 +202,17 @@ class Command(BaseCommand):
         root.set('language', 'en')
         for r in self.new_translations:
             x = ElementTree.SubElement(root, 'translate')
-            for k,v in r.items():
-                e = ElementTree.Element(k)
-                e.text = unicode(v)
-                x.append(e)
+            x.set('type', r['type'])
+            x.set('question', str(r['question']))
+            if r['type'] == 'row' or r['type'] == 'column':
+                x.set('ordinal', str(r['ordinal']))
+            if r['type'] == 'option':
+                x.set('value', str(r['value']))
+            for v in ['title','description','text']:
+                if v in r:
+                    e = ElementTree.Element(v)
+                    e.text = r[v]
+                    x.append(e)
                 
         fn = self.survey.shortname + '.i18n.xml'
         f = open(fn, 'w')
