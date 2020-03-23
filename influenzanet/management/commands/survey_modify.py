@@ -650,7 +650,7 @@ class Command(BaseCommand):
         return s
 
     def str_option(self, option):
-        return '<Option %s,%s,"%s">' % (option.id, option.value, option.text)
+        return '<Option id=%s, ord=%d, value=%s,"%s">' % (option.id, option.ordinal, option.value, option.text)
 
     def str_trans_option(self, to):
         return '<TransOption %s,%s,"%s">' % (to.translation.id, to.option.id, to.text)
