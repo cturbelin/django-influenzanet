@@ -48,7 +48,10 @@ class Command(BaseCommand):
     )
 
     def get_question(self, name):
-        r = models.Question.objects.get(survey=self.survey, data_name=name)
+        try:
+            r = models.Question.objects.get(survey=self.survey, data_name=name)
+        except models.Question.DoesNotExist:
+            raise Exception("Question named '%s' doesnt found" % (name, ))
         return(r)
 
     def get_datatype(self, name):
