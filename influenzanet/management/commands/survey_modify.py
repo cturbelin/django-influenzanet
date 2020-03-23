@@ -30,8 +30,8 @@ ACTIONS = ['add_question', 'add_option']
 DATA_TYPES = [DATATYPE_NUMERIC, DATATYPE_TEXT]
 
 RULES = dict((
- ('show', 'wok.pollster.rules.ShowQuestion'),    
- ('hide', 'wok.pollster.rules.HideQuestion'),  
+ ('show', 'wok.pollster.rules.ShowQuestion'),
+ ('hide', 'wok.pollster.rules.HideQuestion'),
  ('exclusive', 'wok.pollster.rules.Exclusive')
 ))
 
@@ -50,18 +50,18 @@ class Command(BaseCommand):
     def get_question(self, name):
         r = models.Question.objects.get(survey=self.survey, data_name=name)
         return(r)
-    
+
     def get_datatype(self, name):
         r = models.QuestionDataType.objects.get(title=name)
         return(r)
-    
+
     def get_ruletype(self, name):
         if not name in RULES:
             raise Exception("Uknown rule type '%s'" % (name, ))
         js = RULES.get(name)
         r = models.RuleType.objects.get(js_class=js)
         return r
-    
+
     def handle(self, *args, **options):
 
         self.verbosity = int(options.get('verbosity'))
@@ -71,70 +71,75 @@ class Command(BaseCommand):
         self.locale = options.get('locale')
         shortname = options.get('survey')
         translation_file = options.get('translation')
-        
+
         if json_file is None:
             raise Exception("File not provided")
 
         update_def = simplejson.load(open(json_file, 'r'))
-        
+
         if shortname is None:
             if 'survey' in update_def:
                 shortname = update_def['survey']
             else:
                 raise Exception("No survey name defined in update file")
-        
-        self.survey = models.Survey.objects.get(shortname=shortname) 
+
+        self.survey = models.Survey.objects.get(shortname=shortname)
         print "Found Survey %s %d "  % (shortname, self.survey.id)
-        
+
         # New translations
         self.new_translations = []
-        
+
         self.translations = list(models.TranslationSurvey.objects.filter(survey=self.survey))
-        
+
         # Get the db fields list before modification
         self.fields_before = self.get_survey_fields()
-        
+
         if not 'actions' in update_def:
             raise '"Action" entry not defined in json file'
-        
+
         actions = update_def['actions']
-        
+
         # List of added names or duplicates
         self.questions_names = []
         for field in self.fields_before:
             self.questions_names.append(field[0])
-        
+
         commited = False
         with transaction.commit_manually():
             try:
                 idx = 0
                 for action in actions:
                     print "Action %d <%s>" % (idx, action['action'] )
+
                     if(action['action'] == 'add_question'):
                         self.action_add_question(action)
+
                     if(action['action'] == 'add_option'):
                         self.action_add_option(action)
-                        
+
+                    if(action['action'] == 'hide_question'):
+                        self.action_hide_question(action)
+
                     idx = idx + 1
             except Exception as e:
                 transaction.rollback()
                 raise
-            
-            self.fields_after = self.get_survey_fields()   
-            
+
+            self.fields_after = self.get_survey_fields()
+
             if commit:
                 transaction.commit()
                 commited = True
             else:
                 transaction.rollback()
-        
+
         if commited:
             print "Changed has been made on survey " + self.survey.shortname
-        
+
         self.build_fields()
         if translation_file:
             self.build_translations()
-    
+
     def get_survey_fields(self):
         """
          Get the columns list defined for this survey
@@ -143,59 +148,59 @@ class Command(BaseCommand):
         for question in self.survey.questions:
             fields += question.as_fields()
         return fields
-    
-               
+
+
     def build_fields(self):
         """
             Create SQL modification for data tables from fields
         """
         after = dict(self.fields_after)
-        before = dict(self.fields_before)   
+        before = dict(self.fields_before)
         to_add = []
-        
+
         for name in after.keys():
             if not name in before:
                 to_add.append( (name, after[name]) )
-        
+
         qn = connection.ops.quote_name
-        
+
         sql_data_types = connection.creation.data_types
-            
+
         sql = []
         for f in to_add:
             (name, field) = f
-            
+
             sql_type = sql_data_types[field.get_internal_type()]
-            
+
             # Do not apply not null constraint because there are already data in the table
             # Existing rows will have NULL value for the newly created columns
             #if not field.null:
             #    sql_type += ' NOT NULL'
             column = field.db_column or name
-            
+
             sql_type = sql_type % {'column': column }
-            
+
             sql_name = qn(column)
-           
+
             if self.verbosity > 1:
                 print "Adding %s : %s %s" % (name, sql_name, sql_type)
-            
+
             s = "ADD COLUMN %s %s" % (sql_name, sql_type)
-            
+
             sql.append(s)
-        
+
         table = self.survey.shortname
-        
+
         table = qn('pollster_results_' + table)
-        
+
         s = "ALTER TABLE  "+ table +"\n" + ",\n".join(sql) + ";\n"
-        
+
         fn = self.survey.shortname +'.sql'
         f = open(fn, 'w')
         f.write(s)
         f.close()
         print("Modifications to apply to "+ table+" are in "+ fn)
-    
+
     def build_translations(self):
         root = ElementTree.Element('translations')
         root.set('survey', self.survey.shortname)
@@ -213,27 +218,44 @@ class Command(BaseCommand):
                     e = ElementTree.Element(v)
                     e.text = r[v]
                     x.append(e)
-                
+
         fn = self.survey.shortname + '.i18n.xml'
         f = open(fn, 'w')
         f.write(ElementTree.tostring(root, encoding='utf-8'))
         f.close()
-        
+
+    def action_hide_question(self, action):
+        p = action['params']
+        if p is None:
+            raise Exception("Params expected")
+        name = p['question']
+        question = self.get_question(name)
+
+        if self.verbosity > 1:
+            print("Add option in " + self.str_question(question))
+
+        question.starts_hidden = True
+
+        rules = models.Rule.objects.filter(object_question=question)
+        for rule in rules:
+            print("delete " + self.str_rule(rule))
+            rule.delete()
+
     def action_add_option(self, action):
         p = action['params']
         if p is None:
             raise Exception("Params expected")
         name = p['question']
         question = self.get_question(name)
-        
+
         if self.verbosity > 1:
             print("Add option in " + self.str_question(question))
-        
+
         max_ordinal = models.Option.objects.filter(question=question).aggregate(ordinal=Max('ordinal'))
         max_ordinal = max_ordinal['ordinal'] + 1
-        
+
         xoptions = p['options']
-        
+
         for xo in xoptions:
             o = models.Option()
             o.question = question
@@ -250,9 +272,9 @@ class Command(BaseCommand):
             o.ordinal = ordinal
             o.save()
             print(self.str_option(o))
-    
+
             self.translate_option(o, xo['title'])
-    
+
     def translate_option(self, option, text, localized=False):
         for st in self.translations:
             t = TranslationOption()
@@ -274,7 +296,7 @@ class Command(BaseCommand):
             t.save()
             print(self.str_trans_question(t))
         self.new_translations.append({'type': 'question', 'question': question.data_name, 'title': question.title, 'description': question.description})
-    
+
     def translate_question_row(self, row, title):
         for st in self.translations:
             t = TranslationQuestionRow()
@@ -284,8 +306,8 @@ class Command(BaseCommand):
             t.save()
             print(self.str_trans_question_row(t))
         self.new_translations.append({'type': 'row', 'question': row.question.data_name, 'ordinal': row.ordinal, 'title': row.title})
-    
-    
+
+
     def translate_question_column(self, column, title):
         for st in self.translations:
             t = TranslationQuestionColumn()
@@ -295,7 +317,7 @@ class Command(BaseCommand):
             t.save()
             print(self.str_trans_question_column(t))
         self.new_translations.append({'type': 'column', 'question': column.question.data_name, 'ordinal': column.ordinal, 'title': column.title})
-    
+
     def redorder_options(self, options, after):
         """
         Reorder options to insert a new option.
@@ -328,39 +350,39 @@ class Command(BaseCommand):
                 # Shift all values by 2, to keep a order value at ordinal + 1 (for the inserted question)
                 o.ordinal = o.ordinal + 2
                 o.save()
-        return ordinal + 1        
-         
-    def action_add_question(self, action):    
+        return ordinal + 1
+
+    def action_add_question(self, action):
         p = action['params']
         if p is None:
             raise Exception("Params expected")
         q = models.Question()
         name = p['name']
-        
+
         if name is None:
             raise Exception("Name expected")
-        
+
         if name in self.questions_names:
             raise Exception("Name '%s' already in use" % (name))
-        
+
         max_ordinal = models.Question.objects.filter(survey=self.survey).aggregate(ordinal=Max('ordinal'))
         max_ordinal = max_ordinal['ordinal'] + 1
-        
+
         q.data_name = name
         self.questions_names.append(name)
-        
+
         if 'after' in p:
             ordinal = self.redorder_questions(p['after'])
             if self.verbosity > 1:
                 print "Using after '%s' : %d" % (p['after'], ordinal)
         else:
             ordinal = max_ordinal
-        
+
         q.ordinal = ordinal
         q.title = p['title']
         if 'description' in p:
             q.description = p['description']
-        
+
         q.survey = self.survey
         if 'hidden' in p:
             if not isinstance(p['hidden'], bool):
@@ -376,15 +398,15 @@ class Command(BaseCommand):
         data_type = p['data_type']
         dt = self.get_datatype(data_type)
         q.data_type = dt
-        
+
         if 'open_type' in p:
             q.open_option_data_type = self.get_datatype(p['open_type'])
-        
+
         q.save()
-        
+
         print(" Adding " + self.str_question(q))
         self.translate_question(q, q.title, q.description)
-        
+
         if 'options' in p:
             self.add_question_options(q, p['options'])
 
@@ -394,29 +416,29 @@ class Command(BaseCommand):
         if 'rows' in p:
             rows = p['rows']
             if not isinstance(rows, list) or not len(rows) > 0:
-                raise Exception("Rows must be a list") 
+                raise Exception("Rows must be a list")
             self.add_question_rows(q, rows)
-           
-        # Add columns       
+
+        # Add columns
         if 'columns' in p:
             columns = p['columns']
             if not isinstance(columns, list) or not len(columns) > 0:
-                raise Exception("columns must be a list") 
+                raise Exception("columns must be a list")
             self.add_question_columns(q, columns)
-        
-        
+
+
         if 'rules' in p:
             rules = p['rules']
             if not isinstance(rules, list) or not len(rules) > 0:
-                raise Exception("Rules must be a list") 
+                raise Exception("Rules must be a list")
             rid = 0
             for xr in rules:
                 rule = models.Rule()
                 subject_options = None
                 object_options = None
-                
+
                 x_rule_type = xr['type']
-                
+
                 try:
                     rtype = self.get_ruletype(x_rule_type)
                     if x_rule_type == "exclusive":
@@ -436,37 +458,37 @@ class Command(BaseCommand):
                     rule.is_sufficient = xr['sufficient']
                 else:
                     rule.is_sufficient = True
-            
+
                 rule.subject_question = subject_question
                 rule.object_question = q
                 rule.save()
                 # Now update dependencies
                 if subject_options is not None:
                     rule.subject_options = subject_options
-                
+
                 if object_options is not None:
                     rule.object_options = object_options
-                
+
                 if self.verbosity > 0:
                     print("   + " + self.str_rule(rule))
                 rid = rid + 1
-    
+
     def add_question_options_from(self, question, options_from):
-        
+
         blank_value = options_from.get('blank_value', None)
-        
+
         options = []
-        
+
         def sorter(text):
             try:
                 text = unicode(text, 'utf-8')
-            except (TypeError, NameError): # unicode is a default on python 3 
+            except (TypeError, NameError): # unicode is a default on python 3
                 pass
             text = unicodedata.normalize('NFD', text)
             text = text.encode('ascii', 'ignore')
             text = text.lower()
             return text
-        
+
         localized = False
         if 'dataset' in options_from:
             dataset_name = options_from['dataset']
@@ -477,13 +499,13 @@ class Command(BaseCommand):
                     options.append({'value': k, 'title': v})
         if 'order' in options_from and options_from['order']:
             options.sort(cmp=None, key=lambda r : sorter(r['title']), reverse=False)
-        
+
         if not blank_value is None:
             blank_title = options_from.get('blank_title', '--')
             options.insert(0, {'value': blank_value, 'title': blank_title })
-        
+
         self.add_question_options(question, options, localized=localized)
-    
+
     def add_question_options(self, question, xoptions, localized=False):
         option_ordinal = 0
         for xoption in xoptions:
@@ -496,16 +518,16 @@ class Command(BaseCommand):
             option.virtual_inf =  ''
             option.virtual_sup = ''
             option.virtual_regex = ''
-            option.text = xoption['title'] 
+            option.text = xoption['title']
             option.value = xoption['value']
             option.is_open = False
             option.starts_hidden = False
-            
+
             if 'open' in xoption:
                 option.is_open = True
                 if question.open_option_data_type is None:
                     raise Exception("Please set open option data type for this question")
-            
+
             option.save()
             print "  + " + self.str_option(option)
             self.translate_option(option, option.text, localized=localized)
@@ -514,32 +536,32 @@ class Command(BaseCommand):
         rid = 1 # row def index, for errors
         ordinals = [] # ordinals (must be unique)
         for xr in rows:
-            
+
             # Ordinal are used to build the data name for response of a matrix question
             # So it's mandatory
             if not 'ordinal' in xr:
                 raise Exception("'ordinal' is required for row definition in row %d" % (rid, ))
-            
+
             o = int(xr['ordinal'])
             if not o > 0:
                 raise Exception("Ordinal must be positive integer")
-            
+
             if o in ordinals:
                 raise Exception("Ordinal for row must be unique, %d already defined in row %d" % (o, rid))
-            
+
             if not 'title' in xr:
                 raise Exception("'title' is required row %d" % (rid, ))
-            
+
             ordinals.append(o)
-            
+
             row = models.QuestionRow()
             row.question = question
             row.ordinal = o
             row.title = xr['title']
             row.save()
-            
+
             self.translate_question_row(row, row.title)
-            
+
             rid = rid + 1
 
 
@@ -547,36 +569,36 @@ class Command(BaseCommand):
         rid = 1 # row def index, for errors
         ordinals = []
         for xr in columns:
-            
+
             # Ordinal are used to build the data name for response of a matrix question
             # So it's mandatory
             if not 'ordinal' in xr:
                 raise Exception("'ordinal' is required for column definition in column %d" % (rid, ))
-            
+
             o = int(xr['ordinal'])
             if not o > 0:
                 raise Exception("Ordinal must be positive integer in column %d " % (rid, ))
-            
+
             if o in ordinals:
                 raise Exception("Ordinal for columns must be unique, %d already defined in column %d" % (o, rid))
-            
+
             if not 'title' in xr:
                 raise Exception("'title' is required columns %d" % (rid, ))
-            
+
             ordinals.append(o)
-            
+
             column = models.QuestionColumn()
             column.question = question
             column.ordinal = o
             column.title = xr['title']
             column.save()
-            
+
             self.translate_question_column(column, column.title)
-            
+
             rid = rid + 1
-    
-                
-    def get_target_options(self, question, oo):           
+
+
+    def get_target_options(self, question, oo):
         subject_options = None
         all_options = question.options
         if isinstance(oo, str) and oo == "all":
@@ -601,28 +623,28 @@ class Command(BaseCommand):
         if subject_options is None:
             raise Exception("Unable to find option definitions")
         return subject_options
-    
+
     def str_question(self, q):
         if q is None:
             return "Question<None>"
         s = "Q<%s, %s>" % (q.id, q.data_name)
         return s
-    
+
     def str_option(self, option):
-        return '<Option %s,%s,"%s">' % (option.id, option.value, option.text) 
-    
+        return '<Option %s,%s,"%s">' % (option.id, option.value, option.text)
+
     def str_trans_option(self, to):
-        return '<TransOption %s,%s,"%s">' % (to.translation.id, to.option.id, to.text) 
-   
+        return '<TransOption %s,%s,"%s">' % (to.translation.id, to.option.id, to.text)
+
     def str_trans_question(self, to):
-        return '<TransQuestion %s,%s,"%s">' % (to.translation.id, to.question.id, to.title) 
-    
+        return '<TransQuestion %s,%s,"%s">' % (to.translation.id, to.question.id, to.title)
+
     def str_trans_question_row(self, to):
-        return '<TransRow %s,%s,"%s">' % (to.translation.id, to.row.id, to.title) 
-    
+        return '<TransRow %s,%s,"%s">' % (to.translation.id, to.row.id, to.title)
+
     def str_trans_question_column(self, to):
-        return '<TransColumn %s,%s,"%s">' % (to.translation.id, to.column.id, to.title) 
-    
+        return '<TransColumn %s,%s,"%s">' % (to.translation.id, to.column.id, to.title)
+
     def str_options(self, options):
         if options is None:
             return '<None>'
@@ -630,13 +652,13 @@ class Command(BaseCommand):
         for o in options:
            oo.append(o.value)
         return '[' + ','.join(oo) + ']'
-    
+
     def str_rule(self, rule):
-        s = 'Rule<from ' + self.str_question(rule.subject_question) 
+        s = 'Rule<from ' + self.str_question(rule.subject_question)
         if rule.subject_options is not None:
             oo = rule.subject_options.all()
             s += self.str_options(oo)
-        s += ' target ' + self.str_question(rule.object_question)   
+        s += ' target ' + self.str_question(rule.object_question)
         if rule.object_options is not None:
             oo = rule.object_options.all()
             s += self.str_options(oo)
