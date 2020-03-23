@@ -268,8 +268,6 @@ class Command(BaseCommand):
         if self.verbosity > 1:
             print("Add option in " + self.str_question(question))
 
-        max_ordinal = models.Option.objects.filter(question=question).aggregate(ordinal=Max('ordinal'))
-        max_ordinal = max_ordinal['ordinal'] + 1
 
         xoptions = p['options']
 
@@ -281,11 +279,12 @@ class Command(BaseCommand):
             o.is_open = False
             o.starts_hidden = False
             if 'after' in xo:
+                q = models.Question.objects.get(id=question.id)
                 after = xo['after']
-                ordinal = self.redorder_options(question.options, after)
+                ordinal = self.redorder_options(question.id, after)
             else:
-                ordinal = max_ordinal
-                max_ordinal = max_ordinal + 1
+                max_ordinal = models.Option.objects.filter(question=question).aggregate(ordinal=Max('ordinal'))
+                ordinal = max_ordinal['ordinal'] + 1
             o.ordinal = ordinal
             o.save()
             print(self.str_option(o))
@@ -335,11 +334,14 @@ class Command(BaseCommand):
             print(self.str_trans_question_column(t))
         self.new_translations.append({'type': 'column', 'question': column.question.data_name, 'ordinal': column.ordinal, 'title': column.title})
 
-    def redorder_options(self, options, after):
+    def redorder_options(self, question_id, after):
         """
         Reorder options to insert a new option.
         Return the ordinal value to assign to the new option
         """
+        # Get fresh question with all options
+        question = models.Question.objects.get(id=question_id)
+        options = question.options
         ordinal = None
         for o in options:
             if o.value == after:
