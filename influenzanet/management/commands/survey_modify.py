@@ -45,6 +45,7 @@ class Command(BaseCommand):
         make_option('-c', '--commit', action='store_true',  dest='commit', help='Validate changes (dont by default'),
         make_option('-l', '--locale', action='store', type="string", dest='locale', help='Validate changes (dont by default', default='en'),
         make_option('-t', '--translation', action='store_true',  dest='translation', help='Create translation file', default=False),
+        make_option('-u', '--update-table', action='store_true',  dest='update_table', help='Update table columns (only with commit)', default=False),
     )
 
     def get_question(self, name):
@@ -74,7 +75,7 @@ class Command(BaseCommand):
         self.locale = options.get('locale')
         shortname = options.get('survey')
         translation_file = options.get('translation')
-
+        update_table = options.get('update_table')
         if json_file is None:
             raise Exception("File not provided")
 
@@ -139,7 +140,7 @@ class Command(BaseCommand):
         if commited:
             print "Changed has been made on survey " + self.survey.shortname
 
-        self.build_fields()
+        self.build_fields(update_table and commited)
         if translation_file:
             self.build_translations()
 
@@ -153,7 +154,7 @@ class Command(BaseCommand):
         return fields
 
 
-    def build_fields(self):
+    def build_fields(self, update):
         """
             Create SQL modification for data tables from fields
         """
@@ -196,13 +197,26 @@ class Command(BaseCommand):
 
         table = qn('pollster_results_' + table)
 
-        s = "ALTER TABLE  "+ table +"\n" + ",\n".join(sql) + ";\n"
+        alter_table = "ALTER TABLE  "+ table
+
+        query =  alter_table +"\n" + ",\n".join(sql) + ";\n"
 
         fn = self.survey.shortname +'.sql'
         f = open(fn, 'w')
-        f.write(s)
+        f.write(query)
         f.close()
         print("Modifications to apply to "+ table+" are in "+ fn)
+
+        if(update):
+            print("Updating data table")
+            try:
+                cursor = connection.cursor()
+                cursor.execute(query)
+                print("Table '%s' updated with success" % (table, ))
+            except:
+                print("Error during table update")
+                raise
+
 
     def build_translations(self):
         root = ElementTree.Element('translations')
