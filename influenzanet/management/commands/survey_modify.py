@@ -279,7 +279,6 @@ class Command(BaseCommand):
             o.is_open = False
             o.starts_hidden = False
             if 'after' in xo:
-                q = models.Question.objects.get(id=question.id)
                 after = xo['after']
                 ordinal = self.redorder_options(question.id, after)
             else:
@@ -298,7 +297,8 @@ class Command(BaseCommand):
             t.option = option
             t.text = text
             t.save()
-            print(self.str_trans_option(t))
+            if self.verbosity > 1:
+                print(self.str_trans_option(t))
         if not localized:
             self.new_translations.append({'type': 'option', 'value': option.value, 'text': option.text, 'description': option.description, 'question': option.question.data_name })
 
@@ -310,7 +310,8 @@ class Command(BaseCommand):
             t.title = title
             t.description = description
             t.save()
-            print(self.str_trans_question(t))
+            if self.verbosity > 1:
+                print(self.str_trans_question(t))
         self.new_translations.append({'type': 'question', 'question': question.data_name, 'title': question.title, 'description': question.description})
 
     def translate_question_row(self, row, title):
@@ -320,7 +321,8 @@ class Command(BaseCommand):
             t.row = row
             t.title = title
             t.save()
-            print(self.str_trans_question_row(t))
+            if self.verbosity > 1:
+                print(self.str_trans_question_row(t))
         self.new_translations.append({'type': 'row', 'question': row.question.data_name, 'ordinal': row.ordinal, 'title': row.title})
 
 
@@ -331,7 +333,8 @@ class Command(BaseCommand):
             t.column = column
             t.title = title
             t.save()
-            print(self.str_trans_question_column(t))
+            if self.verbosity > 1:
+                print(self.str_trans_question_column(t))
         self.new_translations.append({'type': 'column', 'question': column.question.data_name, 'ordinal': column.ordinal, 'title': column.title})
 
     def redorder_options(self, question_id, after):
@@ -341,18 +344,20 @@ class Command(BaseCommand):
         """
         # Get fresh question with all options
         question = models.Question.objects.get(id=question_id)
-        options = question.options
+        options = list(question.options) # fresh iterator
         ordinal = None
         for o in options:
             if o.value == after:
                 ordinal = o.ordinal
         if ordinal is None:
             raise Exception("Unknown after value '%s'" % (after) )
+        ordinal = ordinal + 1 # Target ordinal
         for o in options:
-            if o.ordinal > ordinal:
-                o.ordinal = o.ordinal + 2
+            # Migrate ordinal greater or equal to the target ordinal
+            if o.ordinal >= ordinal:
+                o.ordinal = o.ordinal + 1 
                 o.save()
-        return ordinal + 1
+        return ordinal
 
     def redorder_questions(self, after):
         """
@@ -669,7 +674,7 @@ class Command(BaseCommand):
             return '<None>'
         oo = []
         for o in options:
-           oo.append(o.value)
+            oo.append(o.value)
         return '[' + ','.join(oo) + ']'
 
     def str_rule(self, rule):
