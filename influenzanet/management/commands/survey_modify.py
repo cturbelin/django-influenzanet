@@ -903,5 +903,10 @@ class Command(BaseCommand):
         if rule.object_options is not None:
             oo = rule.object_options.all()
             s += self.str_options(oo)
+        s+= ",S"
+        if rule.is_sufficient:
+            s += "+"
+        else:
+            s += "-"
         s += ">"
         return s
