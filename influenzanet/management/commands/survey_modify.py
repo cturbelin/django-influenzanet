@@ -253,11 +253,25 @@ class Command(BaseCommand):
 
         question.starts_hidden = True
 
+        question.save()
+
         rules = models.Rule.objects.filter(object_question=question)
         for rule in rules:
             print("delete " + self.str_rule(rule))
             rule.delete()
+            
+    def action_prune_options(self, action):
+        p = action['params']
+        if p is None:
+            raise Exception("Params expected")
+        name = p['question']
+        question = self.get_question(name)
 
+        if self.verbosity > 1:
+            print("Add option in " + self.str_question(question))
+
+        options = list(question.options)
+        
     def action_add_option(self, action):
         p = action['params']
         if p is None:
@@ -271,6 +285,7 @@ class Command(BaseCommand):
 
         xoptions = p['options']
 
+        added_options = []
         for xo in xoptions:
             o = models.Option()
             o.question = question
@@ -286,96 +301,46 @@ class Command(BaseCommand):
                 ordinal = max_ordinal['ordinal'] + 1
             o.ordinal = ordinal
             o.save()
+            added_options.append(o)
             print(self.str_option(o))
 
             self.translate_option(o, xo['title'])
+        if 'rules' in p:
+            xrules = p['rules']
+            for xr in xrules:
+                target = self.get_question(xr['object'])
+                subject = question
+                rule_type = self.get_ruletype(xr["type"])
+                
+                try:
+                    r = models.Rule.objects.get(subject_question=subject, object_question=target, rule_type=rule_type)
+                except models.Rule.DoesNotExist, e:
+                    print(e)
+                    raise Exception("Unable to find rule %s %s(%d) -> %s(%d)" % (rule_type.id, subject.data_name, subject.id, target.data_name, target.id))
+                
+                print("Found "+ self.str_rule(r))
+                
+                options_in = None
+                
+                if 'in' in xr:
+                    options_in = xr['in']
+                
+                any_added = True
+                for o in added_options:
+                    if options_in is None:
+                        to_add = True
+                    else:
+                        to_add = o.value in options_in
+                    if to_add:
+                        any_added = True
+                        print(" -> Adding " + self.str_option(o))
+                        r.subject_options.add(o)
+                
+                if any_added:
+                    r.save()
+                    print(" Rule after "+ self.str_rule(r))
 
-    def translate_option(self, option, text, localized=False):
-        for st in self.translations:
-            t = TranslationOption()
-            t.translation = st
-            t.option = option
-            t.text = text
-            t.save()
-            if self.verbosity > 1:
-                print(self.str_trans_option(t))
-        if not localized:
-            self.new_translations.append({'type': 'option', 'value': option.value, 'text': option.text, 'description': option.description, 'question': option.question.data_name })
-
-    def translate_question(self, question, title, description=None):
-        for st in self.translations:
-            t = TranslationQuestion()
-            t.translation = st
-            t.question = question
-            t.title = title
-            t.description = description
-            t.save()
-            if self.verbosity > 1:
-                print(self.str_trans_question(t))
-        self.new_translations.append({'type': 'question', 'question': question.data_name, 'title': question.title, 'description': question.description})
-
-    def translate_question_row(self, row, title):
-        for st in self.translations:
-            t = TranslationQuestionRow()
-            t.translation = st
-            t.row = row
-            t.title = title
-            t.save()
-            if self.verbosity > 1:
-                print(self.str_trans_question_row(t))
-        self.new_translations.append({'type': 'row', 'question': row.question.data_name, 'ordinal': row.ordinal, 'title': row.title})
-
-
-    def translate_question_column(self, column, title):
-        for st in self.translations:
-            t = TranslationQuestionColumn()
-            t.translation = st
-            t.column = column
-            t.title = title
-            t.save()
-            if self.verbosity > 1:
-                print(self.str_trans_question_column(t))
-        self.new_translations.append({'type': 'column', 'question': column.question.data_name, 'ordinal': column.ordinal, 'title': column.title})
-
-    def redorder_options(self, question_id, after):
-        """
-        Reorder options to insert a new option.
-        Return the ordinal value to assign to the new option
-        """
-        # Get fresh question with all options
-        question = models.Question.objects.get(id=question_id)
-        options = list(question.options) # fresh iterator
-        ordinal = None
-        for o in options:
-            if o.value == after:
-                ordinal = o.ordinal
-        if ordinal is None:
-            raise Exception("Unknown after value '%s'" % (after) )
-        ordinal = ordinal + 1 # Target ordinal
-        for o in options:
-            # Migrate ordinal greater or equal to the target ordinal
-            if o.ordinal >= ordinal:
-                o.ordinal = o.ordinal + 1 
-                o.save()
-        return ordinal
-
-    def redorder_questions(self, after):
-        """
-            Reorder questions to insert a new question. Return the ordinal value to assign to the new question
-        """
-        ordinal = None
-        for o in self.survey.questions:
-            if o.data_name == after:
-                ordinal = o.ordinal
-        if ordinal is None:
-            raise Exception("Unknown after question '%s'" % (after) )
-        for o in self.survey.questions:
-            if o.ordinal > ordinal:
-                # Shift all values by 2, to keep a order value at ordinal + 1 (for the inserted question)
-                o.ordinal = o.ordinal + 2
-                o.save()
-        return ordinal + 1
-
+    
     def action_add_question(self, action):
         p = action['params']
         if p is None:
@@ -496,6 +461,171 @@ class Command(BaseCommand):
                 if self.verbosity > 0:
                     print("   + " + self.str_rule(rule))
                 rid = rid + 1
+
+    def action_modify_question(self, action):
+        p = action['params']
+        if p is None:
+            raise Exception("Params expected")
+        name = p['name']
+
+        if name is None:
+            raise Exception("Name expected")
+       
+        modify = False
+        try:
+            q = models.Question.objects.get(data_name=name)
+        except models.Question.DoesNotExist:
+            raise Exception("Unable to find question with name '%s'" % name)
+        
+        if 'after' in p:
+            ordinal = self.redorder_questions(p['after'])
+            if self.verbosity > 1:
+                print "Using after '%s' : %d" % (p['after'], ordinal)
+        
+            q.ordinal = ordinal
+        
+        if 'title' in p:
+            q.title = p['title']
+        if 'description' in p:
+            q.description = p['description']
+
+        if 'hidden' in p:
+            if not isinstance(p['hidden'], bool):
+                raise Exception("Hidden must be boolean")
+            q.starts_hidden = p["hidden"]
+        
+        print(" Modifying " + self.str_question(q))
+        q.save()
+        
+        if 'rules' in p:
+            rules = p['rules']
+            if not isinstance(rules, list) or not len(rules) > 0:
+                raise Exception("Rules must be a list")
+            rid = 0
+            for xr in rules:
+                rule = models.Rule()
+                subject_options = None
+                object_options = None
+
+                x_rule_type = xr['type']
+
+                try:
+                    rtype = self.get_ruletype(x_rule_type)
+                    if x_rule_type == "exclusive":
+                        subject_question = q
+                        exclusive_options = xr['options']
+                        subject_options = self.get_target_options(q, {'in': exclusive_options })
+                        object_options = self.get_target_options(q, {'not': exclusive_options })
+                    else:
+                        subject_question = self.get_question(xr["from"])
+                        if 'options' in xr:
+                            subject_options = self.get_target_options(subject_question, xr['options'])
+                except Exception as e:
+                    e.message += "Error in rule %d : %s" % (rid, e.message)
+                    raise
+                rule.rule_type = rtype
+                if 'sufficient' in xr:
+                    rule.is_sufficient = xr['sufficient']
+                else:
+                    rule.is_sufficient = True
+
+                rule.subject_question = subject_question
+                rule.object_question = q
+                rule.save()
+                # Now update dependencies
+                if subject_options is not None:
+                    rule.subject_options = subject_options
+
+                if object_options is not None:
+                    rule.object_options = object_options
+
+                if self.verbosity > 0:
+                    print("   + " + self.str_rule(rule))
+                rid = rid + 1
+
+    def action_add_rules(self, action):
+        p = action['params']
+        if p is None:
+            raise Exception("Params expected")
+        name = p['name']
+
+        if name is None:
+            raise Exception("Name expected")
+       
+        modify = False
+        try:
+            q = models.Question.objects.get(data_name=name)
+        except models.Question.DoesNotExist:
+            raise Exception("Unable to find question with name '%s'" % name)
+        
+        if 'after' in p:
+            ordinal = self.redorder_questions(p['after'])
+            if self.verbosity > 1:
+                print "Using after '%s' : %d" % (p['after'], ordinal)
+        
+            q.ordinal = ordinal
+        
+        if 'title' in p:
+            q.title = p['title']
+        if 'description' in p:
+            q.description = p['description']
+
+        if 'hidden' in p:
+            if not isinstance(p['hidden'], bool):
+                raise Exception("Hidden must be boolean")
+            q.starts_hidden = p["hidden"]
+        
+        print(" Modifying " + self.str_question(q))
+        q.save()
+        
+        if 'rules' in p:
+            rules = p['rules']
+            if not isinstance(rules, list) or not len(rules) > 0:
+                raise Exception("Rules must be a list")
+            rid = 0
+            for xr in rules:
+                rule = models.Rule()
+                subject_options = None
+                object_options = None
+
+                x_rule_type = xr['type']
+
+                try:
+                    rtype = self.get_ruletype(x_rule_type)
+                    if x_rule_type == "exclusive":
+                        subject_question = q
+                        exclusive_options = xr['options']
+                        subject_options = self.get_target_options(q, {'in': exclusive_options })
+                        object_options = self.get_target_options(q, {'not': exclusive_options })
+                    else:
+                        subject_question = self.get_question(xr["from"])
+                        if 'options' in xr:
+                            subject_options = self.get_target_options(subject_question, xr['options'])
+                except Exception as e:
+                    e.message += "Error in rule %d : %s" % (rid, e.message)
+                    raise
+                rule.rule_type = rtype
+                if 'sufficient' in xr:
+                    rule.is_sufficient = xr['sufficient']
+                else:
+                    rule.is_sufficient = True
+
+                rule.subject_question = subject_question
+                rule.object_question = q
+                rule.save()
+                # Now update dependencies
+                if subject_options is not None:
+                    rule.subject_options = subject_options
+
+                if object_options is not None:
+                    rule.object_options = object_options
+
+                if self.verbosity > 0:
+                    print("   + " + self.str_rule(rule))
+                rid = rid + 1
+
+
+
 
     def add_question_options_from(self, question, options_from):
 
@@ -647,7 +777,94 @@ class Command(BaseCommand):
         if subject_options is None:
             raise Exception("Unable to find option definitions")
         return subject_options
+    
+    def translate_option(self, option, text, localized=False):
+        for st in self.translations:
+            t = TranslationOption()
+            t.translation = st
+            t.option = option
+            t.text = text
+            t.save()
+            if self.verbosity > 1:
+                print(self.str_trans_option(t))
+        if not localized:
+            self.new_translations.append({'type': 'option', 'value': option.value, 'text': option.text, 'description': option.description, 'question': option.question.data_name })
 
+    def translate_question(self, question, title, description=None):
+        for st in self.translations:
+            t = TranslationQuestion()
+            t.translation = st
+            t.question = question
+            t.title = title
+            t.description = description
+            t.save()
+            if self.verbosity > 1:
+                print(self.str_trans_question(t))
+        self.new_translations.append({'type': 'question', 'question': question.data_name, 'title': question.title, 'description': question.description})
+
+    def translate_question_row(self, row, title):
+        for st in self.translations:
+            t = TranslationQuestionRow()
+            t.translation = st
+            t.row = row
+            t.title = title
+            t.save()
+            if self.verbosity > 1:
+                print(self.str_trans_question_row(t))
+        self.new_translations.append({'type': 'row', 'question': row.question.data_name, 'ordinal': row.ordinal, 'title': row.title})
+
+
+    def translate_question_column(self, column, title):
+        for st in self.translations:
+            t = TranslationQuestionColumn()
+            t.translation = st
+            t.column = column
+            t.title = title
+            t.save()
+            if self.verbosity > 1:
+                print(self.str_trans_question_column(t))
+        self.new_translations.append({'type': 'column', 'question': column.question.data_name, 'ordinal': column.ordinal, 'title': column.title})
+
+    def redorder_options(self, question_id, after):
+        """
+        Reorder options to insert a new option.
+        Return the ordinal value to assign to the new option
+        """
+        # Get fresh question with all options
+        question = models.Question.objects.get(id=question_id)
+        options = list(question.options) # fresh iterator
+        ordinal = None
+        for o in options:
+            if o.value == after:
+                ordinal = o.ordinal
+        if ordinal is None:
+            raise Exception("Unknown after value '%s'" % (after) )
+        ordinal = ordinal + 1 # Target ordinal
+        for o in options:
+            # Migrate ordinal greater or equal to the target ordinal
+            if o.ordinal >= ordinal:
+                o.ordinal = o.ordinal + 1 
+                o.save()
+        return ordinal
+
+    def redorder_questions(self, after):
+        """
+            Reorder questions to insert a new question. Return the ordinal value to assign to the new question
+        """
+        ordinal = None
+        for o in self.survey.questions:
+            if o.data_name == after:
+                ordinal = o.ordinal
+        if ordinal is None:
+            raise Exception("Unknown after question '%s'" % (after) )
+        for o in self.survey.questions:
+            if o.ordinal > ordinal:
+                # Shift all values by 2, to keep a order value at ordinal + 1 (for the inserted question)
+                o.ordinal = o.ordinal + 2
+                o.save()
+        return ordinal + 1
+
+    
     def str_question(self, q):
         if q is None:
             return "Question<None>"
