@@ -318,7 +318,7 @@ class Command(BaseCommand):
                     print(e)
                     raise Exception("Unable to find rule %s %s(%d) -> %s(%d)" % (rule_type.id, subject.data_name, subject.id, target.data_name, target.id))
                 
-                print("Found "+ self.str_rule(r))
+                #print("Found "+ self.str_rule(r))
                 
                 options_in = None
                 
@@ -333,7 +333,7 @@ class Command(BaseCommand):
                         to_add = o.value in options_in
                     if to_add:
                         any_added = True
-                        print(" -> Adding " + self.str_option(o))
+                        #print(" -> Adding " + self.str_option(o))
                         r.subject_options.add(o)
                 
                 if any_added:
