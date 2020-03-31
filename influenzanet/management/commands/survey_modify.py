@@ -260,6 +260,18 @@ class Command(BaseCommand):
             print("delete " + self.str_rule(rule))
             rule.delete()
             
+        prune = p.get('prune_options', False) 
+        keep_options = p.get('keep_options', [])
+        if not isinstance(keep_options, list):
+            raise Exception("keep_options must be a list")
+        
+        if prune:
+            options = list(question.options)
+            for o in options:
+                if o.value in keep_options:
+                    continue
+                o.delete()
+            
     def action_prune_options(self, action):
         p = action['params']
         if p is None:
