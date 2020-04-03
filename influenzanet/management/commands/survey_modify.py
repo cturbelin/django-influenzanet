@@ -299,10 +299,17 @@ class Command(BaseCommand):
 
         added_options = []
         for xo in xoptions:
+            value= xo['value']
+            try:
+                o_old = models.Option.objects.get(question=question, value=value)
+                raise Exception("Option with value '%s' already exists in question '%s'" % (value, name))
+            except models.Option.DoesNotExist:
+                pass
+            
             o = models.Option()
             o.question = question
             o.text = xo['title']
-            o.value = xo['value']
+            o.value = value
             o.is_open = False
             o.starts_hidden = False
             if 'after' in xo:
