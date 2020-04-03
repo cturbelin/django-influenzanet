@@ -22,11 +22,15 @@ Parameters :
  * '--survey=name'  	  name of the survey to apply to
  * '--commit'  		     will apply the changes (without it it will only apply changes but cancel them)
  * '--translation' will build the xml translation file and output it (as [survey].i18n.xml file)
-
+ 
 ```bash
 python manage.py survey_modify --file=coronavirus.json --survey=weekly --locale=xx 
 ```
 
-# If everything seems ok relaunch the command by adding --commit
-## Apply the SQL modifications 
+### If everything seems ok relaunch the command by adding --commit
+
+Apply the SQL modifications 
+
+```bash
 psql -d [database] < weekly.sql
+```
