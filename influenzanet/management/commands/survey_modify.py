@@ -250,6 +250,10 @@ class Command(BaseCommand):
                 x.set('value', str(r['value']))
             for v in ['title','description','text']:
                 if v in r:
+                    e = ElementTree.Element(v + '_org')
+                    e.text = r[v]
+                    x.append(e)
+
                     e = ElementTree.Element(v)
                     e.text = r[v]
                     x.append(e)
