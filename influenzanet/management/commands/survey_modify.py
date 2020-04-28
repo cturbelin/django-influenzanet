@@ -29,11 +29,19 @@ ACTIONS = ['add_question', 'add_option']
 
 DATA_TYPES = [DATATYPE_NUMERIC, DATATYPE_TEXT]
 
-RULES = dict((
- ('show', 'wok.pollster.rules.ShowQuestion'),
- ('hide', 'wok.pollster.rules.HideQuestion'),
- ('exclusive', 'wok.pollster.rules.Exclusive')
-))
+RULES = {
+ 'show': {'js':'wok.pollster.rules.ShowQuestion'},
+ 'hide': {'js':'wok.pollster.rules.HideQuestion'},
+ 'exclusive': {'js':'wok.pollster.rules.Exclusive'},
+ 'fill': {'js':'wok.pollster.rules.Fill', 'object_options': True},
+ 'showoption': {'js':'wok.pollster.rules.ShowOptions', 'object_options': True},
+ 'hideoption': {'js':'wok.pollster.rules.HideOptions', 'object_options': True},
+ 'checkoption': {'js': 'wok.pollster.rules.CheckOptions', 'object_options': True },
+ 'uncheckoption': {'js': 'wok.pollster.rules.UncheckOptions', 'object_options': True },
+ 'futurefill': {'js':'wok.pollster.rules.FutureFill', 'object_options': True},
+ 'futureshow': {'js':'wok.pollster.rules.FutureShowQuestion'},
+ 'futurehide': {'js':'wok.pollster.rules.FutureHideQuestion'}
+}
 
 class Command(BaseCommand):
     help = 'Update a survey for with a json definition'
@@ -59,11 +67,17 @@ class Command(BaseCommand):
         r = models.QuestionDataType.objects.get(title=name)
         return(r)
 
-    def get_ruletype(self, name):
+    def get_ruledef(self, name):
+        name = str(name)
+        name = name.lower()
         if not name in RULES:
             raise Exception("Uknown rule type '%s'" % (name, ))
-        js = RULES.get(name)
-        r = models.RuleType.objects.get(js_class=js)
+        rule_def = RULES.get(name)
+        return rule_def
+
+    def get_ruletype(self, name):
+        rule_def = self.get_ruledef(name)
+        r = models.RuleType.objects.get(js_class=rule_def['js'])
         return r
 
     def handle(self, *args, **options):
@@ -87,7 +101,11 @@ class Command(BaseCommand):
             else:
                 raise Exception("No survey name defined in update file")
 
-        self.survey = models.Survey.objects.get(shortname=shortname)
+        try:
+            self.survey = models.Survey.objects.get(shortname=shortname)
+        except models.Survey.DoesNotExist:
+            print "Unable to find survey '%s'" % shortname
+            return
         print "Found Survey %s %d "  % (shortname, self.survey.id)
 
         # New translations
@@ -469,9 +487,14 @@ class Command(BaseCommand):
                         subject_question = self.get_question(xr["from"])
                         if 'options' in xr:
                             subject_options = self.get_target_options(subject_question, xr['options'])
+                        if 'to_options' in xr:
+                            object_options = self.get_target_options(q, xr['to_options'])
                 except Exception as e:
                     e.message += "Error in rule %d : %s" % (rid, e.message)
                     raise
+
+                self.check_rule(x_rule_type, subject_question, subject_options, q, object_options)
+
                 rule.rule_type = rtype
                 if 'sufficient' in xr:
                     rule.is_sufficient = xr['sufficient']
@@ -487,10 +510,15 @@ class Command(BaseCommand):
 
                 if object_options is not None:
                     rule.object_options = object_options
-
+                rule.save()
                 if self.verbosity > 0:
                     print("   + " + self.str_rule(rule))
                 rid = rid + 1
+
+    def check_rule(self, rule_type, subject_question, subject_options, object_question, object_options):
+        rule_def = self.get_ruledef(rule_type)
+        if rule_def.get('object_options', False) and object_options is None:
+            raise Exception("Rule '%s' requires object_options" % rule_type)
 
     def add_question_options_from(self, question, options_from):
 
