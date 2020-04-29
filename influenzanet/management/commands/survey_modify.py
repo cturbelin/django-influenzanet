@@ -539,8 +539,12 @@ class Command(BaseCommand):
 
         if 'title' in p:
             q.title = p['title']
+
         if 'description' in p:
             q.description = p['description']
+
+        if 'is_mandatory' in p:
+            q.is_mandatory = bool(p['is_mandatory'])
 
         if 'hidden' in p:
             if not isinstance(p['hidden'], bool):
