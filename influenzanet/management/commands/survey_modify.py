@@ -25,9 +25,10 @@ TYPE_MATRIX_SELECT = 'matrix-select'
 
 DATATYPE_NUMERIC = 'Numeric'
 DATATYPE_TEXT = 'Text'
+DATATYPE_DATE = 'Date'
 ACTIONS = ['add_question', 'add_option']
 
-DATA_TYPES = [DATATYPE_NUMERIC, DATATYPE_TEXT]
+DATA_TYPES = [DATATYPE_NUMERIC, DATATYPE_TEXT, DATATYPE_DATE]
 
 RULES = {
  'show': {'js':'wok.pollster.rules.ShowQuestion'},
@@ -410,7 +411,7 @@ class Command(BaseCommand):
 
         q.ordinal = ordinal
         q.title = p['title']
-        
+
         if 'description' in p:
             q.description = p['description']
 
@@ -425,9 +426,9 @@ class Command(BaseCommand):
         else:
             q.starts_hidden = False
         q.regex = ''
-        
+
         question_type = p['type']
-        
+
         if not question_type in TYPES:
             raise Exception("Unknown type '%s'" % question_type)
         q.type = question_type
