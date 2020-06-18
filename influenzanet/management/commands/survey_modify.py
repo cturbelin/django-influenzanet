@@ -410,8 +410,12 @@ class Command(BaseCommand):
 
         q.ordinal = ordinal
         q.title = p['title']
+        
         if 'description' in p:
             q.description = p['description']
+
+        if 'is_mandatory' in p:
+            q.is_mandatory = bool(p['is_mandatory'])
 
         q.survey = self.survey
         if 'hidden' in p:
@@ -421,7 +425,9 @@ class Command(BaseCommand):
         else:
             q.starts_hidden = False
         q.regex = ''
+        
         question_type = p['type']
+        
         if not question_type in TYPES:
             raise Exception("Unknown type '%s'" % question_type)
         q.type = question_type
@@ -537,8 +543,12 @@ class Command(BaseCommand):
 
         if 'title' in p:
             q.title = p['title']
+
         if 'description' in p:
             q.description = p['description']
+
+        if 'is_mandatory' in p:
+            q.is_mandatory = bool(p['is_mandatory'])
 
         if 'hidden' in p:
             if not isinstance(p['hidden'], bool):
