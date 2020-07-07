@@ -143,6 +143,9 @@ class Command(BaseCommand):
                     if(action['action'] == 'hide_question'):
                         self.action_hide_question(action)
 
+                    if(action['action'] == 'modify_question'):
+                        self.action_modify_question(action)
+
                     idx = idx + 1
             except Exception as e:
                 transaction.rollback()
@@ -606,7 +609,7 @@ class Command(BaseCommand):
 
                 if object_options is not None:
                     rule.object_options = object_options
-
+                rule.save()
                 if self.verbosity > 0:
                     print("   + " + self.str_rule(rule))
                 rid = rid + 1
@@ -625,26 +628,6 @@ class Command(BaseCommand):
             q = models.Question.objects.get(data_name=name)
         except models.Question.DoesNotExist:
             raise Exception("Unable to find question with name '%s'" % name)
-
-        if 'after' in p:
-            ordinal = self.redorder_questions(p['after'])
-            if self.verbosity > 1:
-                print "Using after '%s' : %d" % (p['after'], ordinal)
-
-            q.ordinal = ordinal
-
-        if 'title' in p:
-            q.title = p['title']
-        if 'description' in p:
-            q.description = p['description']
-
-        if 'hidden' in p:
-            if not isinstance(p['hidden'], bool):
-                raise Exception("Hidden must be boolean")
-            q.starts_hidden = p["hidden"]
-
-        print(" Modifying " + self.str_question(q))
-        q.save()
 
         if 'rules' in p:
             rules = p['rules']
@@ -687,7 +670,8 @@ class Command(BaseCommand):
 
                 if object_options is not None:
                     rule.object_options = object_options
-
+                rule.save()
+                
                 if self.verbosity > 0:
                     print("   + " + self.str_rule(rule))
                 rid = rid + 1
