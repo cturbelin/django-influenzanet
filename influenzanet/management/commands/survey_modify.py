@@ -532,12 +532,8 @@ class Command(BaseCommand):
         if name is None:
             raise Exception("Name expected")
 
-        modify = False
-        try:
-            q = models.Question.objects.get(data_name=name)
-        except models.Question.DoesNotExist:
-            raise Exception("Unable to find question with name '%s'" % name)
-
+        q = self.get_question(name)
+        
         if 'after' in p:
             ordinal = self.redorder_questions(p['after'])
             if self.verbosity > 1:
@@ -623,12 +619,8 @@ class Command(BaseCommand):
         if name is None:
             raise Exception("Name expected")
 
-        modify = False
-        try:
-            q = models.Question.objects.get(data_name=name)
-        except models.Question.DoesNotExist:
-            raise Exception("Unable to find question with name '%s'" % name)
-
+        q = self.get_question(name)
+        
         if 'rules' in p:
             rules = p['rules']
             if not isinstance(rules, list) or not len(rules) > 0:
