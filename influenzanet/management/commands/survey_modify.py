@@ -118,7 +118,7 @@ class Command(BaseCommand):
         self.fields_before = self.get_survey_fields()
 
         if not 'actions' in update_def:
-            raise '"Action" entry not defined in json file'
+            raise Exception('"Action" entry not defined in json file')
 
         actions = update_def['actions']
 
@@ -160,7 +160,7 @@ class Command(BaseCommand):
                 transaction.rollback()
 
         if commited:
-            print "Changed has been made on survey " + self.survey.shortname
+            print("Changed has been made on survey " + self.survey.shortname)
 
         self.build_fields(update_table and commited)
         if translation_file:
@@ -209,7 +209,7 @@ class Command(BaseCommand):
             sql_name = qn(column)
 
             if self.verbosity > 1:
-                print "Adding %s : %s %s" % (name, sql_name, sql_type)
+                print("Adding %s : %s %s" % (name, sql_name, sql_type))
 
             s = "ADD COLUMN %s %s" % (sql_name, sql_type)
 
