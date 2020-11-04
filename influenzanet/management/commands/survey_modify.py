@@ -543,10 +543,10 @@ class Command(BaseCommand):
         
         p = action['params']
 
-        if not 'name' in p:
-            raise Exception("name entry expected")
+        if not 'question' in p:
+            raise Exception("question entry expected")
         
-        name = p['name']
+        name = p['question']
 
         q = self.get_question(name)
 
