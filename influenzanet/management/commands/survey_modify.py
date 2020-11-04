@@ -541,6 +541,8 @@ class Command(BaseCommand):
         if not 'params' in action:
             raise Exception("Params expected")
         
+        p = action['params']
+
         if not 'name' in p:
             raise Exception("name entry expected")
         
