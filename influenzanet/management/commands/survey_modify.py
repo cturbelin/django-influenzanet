@@ -581,10 +581,14 @@ class Command(BaseCommand):
         p = action['params']
         if p is None:
             raise Exception("Params expected")
-        name = p['name']
+
+        if not 'question' in p:
+            raise Exception("question entry expected")
+
+        name = p['question']
 
         if name is None:
-            raise Exception("Name expected")
+            raise Exception("question name expected")
 
         q = self.get_question(name)
 
