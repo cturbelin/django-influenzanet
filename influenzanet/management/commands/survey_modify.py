@@ -571,10 +571,7 @@ class Command(BaseCommand):
         if 'after' in p:
             after = p['after']
             ordinal = self.redorder_options(q.id, after)
-        else:
-            max_ordinal = models.Option.objects.filter(question=q).aggregate(ordinal=Max('ordinal'))
-            ordinal = max_ordinal['ordinal'] + 1
-        o.ordinal = ordinal
+            o.ordinal = ordinal
         o.save()
 
     def action_modify_question(self, action):
