@@ -18,6 +18,8 @@ from xml.etree import ElementTree
 from apps.pollster.models import TranslationOption, TranslationQuestion,\
     TranslationQuestionRow, TranslationQuestionColumn
 
+SCHEMA_VERSION = 4
+
 TYPES = dict(models.QUESTION_TYPE_CHOICES)
 TYPE_SINGLE = 'single-choice'
 TYPE_MULTIPLE = 'multiple-choice'
@@ -118,7 +120,15 @@ class Command(BaseCommand):
         self.fields_before = self.get_survey_fields()
 
         if not 'actions' in update_def:
-            raise Exception('"Action" entry not defined in json file')
+            raise Exception('"actions" entry not defined in json file')
+
+        if not 'version' in update_def:
+            raise Exception('"version" entry not defined in json file')
+
+        version = int(update_def['version'])
+        
+        if version != SCHEMA_VERSION:
+            raise Exception("'version' schema is not the version expected %d", (SCHEMA_VERSION))
 
         actions = update_def['actions']
 
@@ -527,13 +537,14 @@ class Command(BaseCommand):
             raise Exception("Rule '%s' requires object_options" % rule_type)
 
     def action_modify_option(self, action):
-        p = action['params']
-        if p is None:
+        
+        if not 'params' in action:
             raise Exception("Params expected")
+        
+        if not 'name' in p:
+            raise Exception("name entry expected")
+        
         name = p['name']
-
-        if name is None:
-            raise Exception("Name expected")
 
         q = self.get_question(name)
 
