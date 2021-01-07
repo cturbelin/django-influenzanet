@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<survey id="survey-15" xmlns="http://dndg.it/ns/pollster-1.0">
+    <title>deactivate</title>
+    <shortname>deactivate</shortname>
+    <version></version>
+    <created>2020-10-02T09:58:55.211254</created>
+    <updated>2020-10-05T17:08:01.555798</updated>
+    <questions>
+    
+        <question id="question-376">
+            <title>Compilation Date</title>
+            <data_name>timestamp</data_name>
+            <description></description>
+            <type>builtin</type>
+            <data_type>wok.pollster.datatypes.Timestamp</data_type>
+            <open_option_data_type></open_option_data_type>
+            <starts_hidden>false</starts_hidden>
+            <is_mandatory>false</is_mandatory>
+            <visual></visual>
+            <tags></tags>
+            <regex></regex>
+            <error_message></error_message>
+            <columns>
+                
+            </columns>
+            <rows>
+                
+            </rows>
+            <options>
+                
+            </options>
+        </question>
+    
+        <question id="question-377">
+            <title>Would you like to stop participating to the influmeter?</title>
+            <data_name>Q1</data_name>
+            <description></description>
+            <type>single-choice</type>
+            <data_type>wok.pollster.datatypes.Numeric</data_type>
+            <open_option_data_type></open_option_data_type>
+            <starts_hidden>false</starts_hidden>
+            <is_mandatory>false</is_mandatory>
+            <visual></visual>
+            <tags></tags>
+            <regex></regex>
+            <error_message></error_message>
+            <columns>
+                
+            </columns>
+            <rows>
+                
+            </rows>
+            <options>
+                
+                <option id="option-2753">
+                    
+                    
+                    <group></group>
+                    <data_name>Q1</data_name>
+                    <is_virtual>false</is_virtual>
+                    
+                    <text>Yes, I would like to unsubscribe, please</text>
+                    <value>0</value>
+                    <is_open>false</is_open>
+                    
+                    <starts_hidden>false</starts_hidden>
+                    
+                </option>
+                
+                <option id="option-2754">
+                    
+                    
+                    <group></group>
+                    <data_name>Q1</data_name>
+                    <is_virtual>false</is_virtual>
+                    
+                    <text>Yes, I would like to delete my account, please</text>
+                    <value>1</value>
+                    <is_open>false</is_open>
+                    
+                    <starts_hidden>false</starts_hidden>
+                    
+                </option>
+                
+            </options>
+        </question>
+    
+    </questions>
+    <rules>
+        
+    </rules>
+    <translations>
+        
+        <translation lang="da">
+            <title></title>
+            <questions>
+            
+                <question ref="question-376">
+                    <title></title>
+                    <description></description>
+                    <error_message></error_message>
+                </question>
+            
+                <question ref="question-377">
+                    <title>Vil du stoppe med at deltage i influmeter</title>
+                    <description></description>
+                    <error_message></error_message>
+                </question>
+            
+            </questions>
+            <columns>
+            
+            </columns>
+            <rows>
+            
+            </rows>
+            <options>
+            
+                <option ref="option-2753">
+                    <text>Ja, jeg vil gerne frameldes, men tillader at mine data opbevares og anvendes.</text>
+                </option>
+            
+                <option ref="option-2754">
+                    <text>Ja, jeg vil gerne frameldes og have slettet mine data.</text>
+                </option>
+            
+            </options>
+        </translation>
+        
+    </translations>
+</survey>
