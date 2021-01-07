@@ -18,6 +18,8 @@ from xml.etree import ElementTree
 from apps.pollster.models import TranslationOption, TranslationQuestion,\
     TranslationQuestionRow, TranslationQuestionColumn
 
+SCHEMA_VERSION = 4
+
 TYPES = dict(models.QUESTION_TYPE_CHOICES)
 TYPE_SINGLE = 'single-choice'
 TYPE_MULTIPLE = 'multiple-choice'
@@ -118,7 +120,15 @@ class Command(BaseCommand):
         self.fields_before = self.get_survey_fields()
 
         if not 'actions' in update_def:
-            raise '"Action" entry not defined in json file'
+            raise Exception('"actions" entry not defined in json file')
+
+        if not 'version' in update_def:
+            raise Exception('"version" entry not defined in json file')
+
+        version = int(update_def['version'])
+        
+        if version != SCHEMA_VERSION:
+            raise Exception("'version' schema is not the version expected %d", (SCHEMA_VERSION))
 
         actions = update_def['actions']
 
@@ -146,6 +156,9 @@ class Command(BaseCommand):
                     if(action['action'] == 'modify_question'):
                         self.action_modify_question(action)
 
+                    if(action['action'] == 'modify_option'):
+                        self.action_modify_option(action)
+
                     idx = idx + 1
             except Exception as e:
                 transaction.rollback()
@@ -160,7 +173,7 @@ class Command(BaseCommand):
                 transaction.rollback()
 
         if commited:
-            print "Changed has been made on survey " + self.survey.shortname
+            print("Changed has been made on survey " + self.survey.shortname)
 
         self.build_fields(update_table and commited)
         if translation_file:
@@ -209,7 +222,7 @@ class Command(BaseCommand):
             sql_name = qn(column)
 
             if self.verbosity > 1:
-                print "Adding %s : %s %s" % (name, sql_name, sql_type)
+                print("Adding %s : %s %s" % (name, sql_name, sql_type))
 
             s = "ADD COLUMN %s %s" % (sql_name, sql_type)
 
@@ -523,17 +536,59 @@ class Command(BaseCommand):
         if rule_def.get('object_options', False) and object_options is None:
             raise Exception("Rule '%s' requires object_options" % rule_type)
 
+    def action_modify_option(self, action):
+        
+        if not 'params' in action:
+            raise Exception("Params expected")
+        
+        p = action['params']
+
+        if not 'question' in p:
+            raise Exception("question entry expected")
+        
+        name = p['question']
+
+        q = self.get_question(name)
+
+        if not 'value' in p:
+            raise Exception("value parameter is expected to identify option")
+
+        value = p['value']
+
+        o = models.Option.objects.get(question=q, value=value)
+
+        if 'title' in p:
+            o.text = p['title']
+
+        if 'description' in p:
+            o.description = p['description']
+
+        if 'hidden' in p:
+            if not isinstance(p['hidden'], bool):
+                raise Exception("Hidden must be boolean")
+            o.starts_hidden = p["hidden"]
+
+        if 'after' in p:
+            after = p['after']
+            ordinal = self.redorder_options(q.id, after)
+            o.ordinal = ordinal
+        o.save()
+
     def action_modify_question(self, action):
         p = action['params']
         if p is None:
             raise Exception("Params expected")
-        name = p['name']
+
+        if not 'question' in p:
+            raise Exception("question entry expected")
+
+        name = p['question']
 
         if name is None:
-            raise Exception("Name expected")
+            raise Exception("question name expected")
 
         q = self.get_question(name)
-        
+
         if 'after' in p:
             ordinal = self.redorder_questions(p['after'])
             if self.verbosity > 1:
@@ -620,7 +675,7 @@ class Command(BaseCommand):
             raise Exception("Name expected")
 
         q = self.get_question(name)
-        
+
         if 'rules' in p:
             rules = p['rules']
             if not isinstance(rules, list) or not len(rules) > 0:
@@ -663,7 +718,7 @@ class Command(BaseCommand):
                 if object_options is not None:
                     rule.object_options = object_options
                 rule.save()
-                
+
                 if self.verbosity > 0:
                     print("   + " + self.str_rule(rule))
                 rid = rid + 1
@@ -872,17 +927,21 @@ class Command(BaseCommand):
         """
         Reorder options to insert a new option.
         Return the ordinal value to assign to the new option
+        if after < 0 then place the ordinal as first
         """
         # Get fresh question with all options
         question = models.Question.objects.get(id=question_id)
         options = list(question.options) # fresh iterator
         ordinal = None
-        for o in options:
-            if o.value == after:
-                ordinal = o.ordinal
-        if ordinal is None:
-            raise Exception("Unknown after value '%s'" % (after) )
-        ordinal = ordinal + 1 # Target ordinal
+        if after < 0:
+            ordinal = 1
+        else:
+            for o in options:
+                if o.value == after:
+                    ordinal = o.ordinal
+            if ordinal is None:
+                raise Exception("Unknown after value '%s'" % (after) )
+            ordinal = ordinal + 1 # Target ordinal
         for o in options:
             # Migrate ordinal greater or equal to the target ordinal
             if o.ordinal >= ordinal:
