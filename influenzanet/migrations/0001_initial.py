@@ -20,11 +20,10 @@ class Migration(SchemaMigration):
         ))
         db.send_create_signal('influenzanet', ['AnonymizedUser'])
 
-
     def backwards(self, orm):
-         if not USE_ANONYMIZE:
+        if not USE_ANONYMIZE:
             return
-       # Deleting model 'AnonymizedUser'
+        # Removing model 'AnonymizedUser'
         db.delete_table('influenzanet_anonymizeduser')
 
 
