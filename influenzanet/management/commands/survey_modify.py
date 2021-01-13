@@ -434,6 +434,10 @@ class Command(BaseCommand):
         if 'is_mandatory' in p:
             q.is_mandatory = bool(p['is_mandatory'])
 
+        # Handle Alias
+        if 'mandatory' in p:
+            q.is_mandatory = bool(p['mandatory'])
+
         q.survey = self.survey
         if 'hidden' in p:
             if not isinstance(p['hidden'], bool):
@@ -604,6 +608,10 @@ class Command(BaseCommand):
 
         if 'is_mandatory' in p:
             q.is_mandatory = bool(p['is_mandatory'])
+
+        # Handle Alias
+        if 'mandatory' in p:
+            q.is_mandatory = bool(p['mandatory'])
 
         if 'hidden' in p:
             if not isinstance(p['hidden'], bool):
