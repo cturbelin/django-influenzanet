@@ -23,7 +23,7 @@ class Migration(SchemaMigration):
 
     def backwards(self, orm):
          if not USE_ANONYMIZE:
-                return
+            return
        # Deleting model 'AnonymizedUser'
         db.delete_table('influenzanet_anonymizeduser')
 
